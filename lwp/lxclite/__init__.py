@@ -29,7 +29,7 @@
 import subprocess
 import os
 
-
+# TODO: Use it everywhere.
 def _run(cmd, output=False):
     '''
     To run command easier
@@ -44,8 +44,11 @@ def _run(cmd, output=False):
 
         return out
 
-    return subprocess.check_call('{}'.format(cmd), shell=True,
-                                 universal_newlines=True)  # returns 0 for True
+    try:
+        subprocess.check_call('{}'.format(cmd), shell=True, universal_newlines=True)  # returns 0 for True
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 
 class ContainerAlreadyExists(Exception):
@@ -124,7 +127,11 @@ def info(container):
             'Container {} does not exist!'.format(container))
 
     output = _run('lxc-info -qn {}|grep -i "State\|PID"'.format(container),
-                  output=True).splitlines()
+                  output=True)
+    if output:
+        output = output.splitlines()
+    else:
+        return {"state": None, "pid": None}
 
     state = output[0].split()[1]
 

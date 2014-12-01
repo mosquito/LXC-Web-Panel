@@ -185,7 +185,7 @@ def host_cpu_percent():
     return str('%.1f' % percent)
 
 
-def host_disk_usage(partition=None):
+def host_disk_usage(directory='/var/lib/lxc'):
     '''
     returns a dict of disk usage values
                     {'total': usage[1],
@@ -193,10 +193,7 @@ def host_disk_usage(partition=None):
                     'free': usage[3],
                     'percent': usage[4]}
     '''
-    if not partition:
-        partition = '/'
-
-    usage = subprocess.check_output(['df -h %s' % partition],
+    usage = subprocess.check_output(['df -h "%s"' % directory],
                                     universal_newlines=True,
                                     shell=True).split('\n')[1].split()
     return {'total': usage[1],
