@@ -27,8 +27,7 @@
 # THE SOFTWARE.
 
 import sys
-sys.path.append('../')
-from lxclite import exists, stopped, ContainerDoesntExists
+from ..lxclite import exists, stopped, ContainerDoesntExists
 
 import os
 import platform
