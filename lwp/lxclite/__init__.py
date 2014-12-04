@@ -26,10 +26,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+from object_cacher import ObjectCacher
 import subprocess
 import os
 
 # TODO: Use it everywhere.
+
+
 def _run(cmd, output=False):
     '''
     To run command easier
@@ -97,6 +100,9 @@ def create(container, template='ubuntu', storage=None, xargs=None):
     if xargs:
         command += ' -- {}'.format(xargs)
 
+    ObjectCacher.invalidate("lxc.info")
+    ObjectCacher.invalidate("lxc.list")
+
     return _run(command)
 
 
@@ -114,9 +120,13 @@ def clone(orig=None, new=None, snapshot=False):
         if snapshot:
             command += ' -s'
 
+        ObjectCacher.invalidate("lxc.info")
+        ObjectCacher.invalidate("lxc.list")
+
         return _run(command)
 
 
+@ObjectCacher(iod="lxc.info")
 def info(container):
     '''
     Check info from lxc-info
@@ -126,24 +136,25 @@ def info(container):
         raise ContainerDoesntExists(
             'Container {} does not exist!'.format(container))
 
-    output = _run('lxc-info -qn {}|grep -i "State\|PID"'.format(container),
+    output = _run('lxc-info -qn {}|grep -i "State\|PID\|IP"'.format(container),
                   output=True)
+
+    params = {"state": None, "pid": None}
     if output:
-        output = output.splitlines()
-    else:
-        return {"state": None, "pid": None}
+        for i in output.splitlines():
+            n, v = i.split()
+            n = n.strip(":").lower()
+            params[n] = v
 
-    state = output[0].split()[1]
+    try:
+        params['pid'] = int(params['pid'])
+    except:
+        pass
 
-    if state == 'STOPPED':
-        pid = "0"
-    else:
-        pid = output[1].split()[1]
-
-    return {'state': state,
-            'pid': pid}
+    return params
 
 
+@ObjectCacher(iod="lxc.list")
 def ls():
     '''
     List containers directory
@@ -158,7 +169,7 @@ def ls():
 
     try:
         ct_list = [x for x in os.listdir(base_path)
-                   if os.path.isdir(os.path.join(base_path, x))]
+                   if os.path.isdir(os.path.join(base_path, x)) and os.path.exists(os.path.join(base_path, x, 'config'))]
     except OSError:
         ct_list = []
 
@@ -214,6 +225,9 @@ def start(container):
         raise ContainerAlreadyRunning(
             'Container {} is already running!'.format(container))
 
+    ObjectCacher.invalidate("lxc.info")
+    ObjectCacher.invalidate("lxc.list")
+
     return _run('lxc-start -dn {}'.format(container))
 
 
@@ -229,6 +243,9 @@ def stop(container):
     if container in stopped():
         raise ContainerNotRunning(
             'Container {} is not running!'.format(container))
+
+    ObjectCacher.invalidate("lxc.info")
+    ObjectCacher.invalidate("lxc.list")
 
     return _run('lxc-stop -n {}'.format(container))
 
@@ -246,6 +263,9 @@ def freeze(container):
         raise ContainerNotRunning(
             'Container {} is not running!'.format(container))
 
+    ObjectCacher.invalidate("lxc.info")
+    ObjectCacher.invalidate("lxc.list")
+
     return _run('lxc-freeze -n {}'.format(container))
 
 
@@ -262,6 +282,9 @@ def unfreeze(container):
         raise ContainerNotRunning(
             'Container {} is not frozen!'.format(container))
 
+    ObjectCacher.invalidate("lxc.info")
+    ObjectCacher.invalidate("lxc.list")
+
     return _run('lxc-unfreeze -n {}'.format(container))
 
 
@@ -274,9 +297,13 @@ def destroy(container):
         raise ContainerDoesntExists(
             'Container {} does not exists!'.format(container))
 
+    ObjectCacher.invalidate("lxc.info")
+    ObjectCacher.invalidate("lxc.list")
+
     return _run('lxc-destroy -n {}'.format(container))
 
 
+@ObjectCacher(iod="lxc.list", timeout=5)
 def checkconfig():
     '''
     Returns the output of lxc-checkconfig (colors cleared)
@@ -296,5 +323,8 @@ def cgroup(container, key, value):
     if not exists(container):
         raise ContainerDoesntExists(
             'Container {} does not exist!'.format(container))
+
+    ObjectCacher.invalidate("lxc.info")
+    ObjectCacher.invalidate("lxc.list")
 
     return _run('lxc-cgroup -n {} {} {}'.format(container, key, value))

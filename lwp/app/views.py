@@ -66,6 +66,7 @@ def teardown_request(exception):
 
 
 @app.route('/home')
+@if_auth
 def home():
     '''
     home page function
@@ -78,10 +79,13 @@ def home():
         containers_by_status = []
 
         for container in listx[status]:
+            settings = lwp.get_container_settings(container)
+            settings['ipv4'] = lxc.info(container).get('ip', settings.get('ipv4'))
+
             containers_by_status.append({
                 'name': container,
                 'memusg': lwp.memory_usage(container),
-                'settings': lwp.get_container_settings(container)
+                'settings': settings
             })
         containers_all.append({
             'status': status.lower(),
@@ -94,14 +98,14 @@ def home():
                            templates=lwp.get_templates_list())
 
 
-@if_auth
 @app.route('/')
-def index():
-    return redirect(url_for(home), code=302)
-
-
 @if_auth
+def index():
+    return redirect(url_for('home'), code=302)
+
+
 @app.route('/about')
+@if_auth
 def about():
     '''
     about page
@@ -110,8 +114,8 @@ def about():
     return render_template('about.html', containers=lxc.ls(), version=lwp.check_version())
 
 
-@if_auth
 @app.route('/<container>/edit', methods=['POST', 'GET'])
+@if_auth
 def edit(container=None):
     '''
     edit containers page and actions if form post request
@@ -291,9 +295,9 @@ def edit(container=None):
                            host_memory=host_memory)
 
 
-@if_superuser
-@if_auth
 @app.route('/settings/lxc-net', methods=['POST', 'GET'])
+@if_auth
+@if_superuser
 def lxc_net():
     '''
     lxc-net (/etc/default/lxc) settings page and actions if form post request
@@ -363,9 +367,9 @@ def lxc_net():
                            running=lxc.running())
 
 
+@app.route('/lwp/users', methods=['POST', 'GET'])
 @if_superuser
 @if_auth
-@app.route('/lwp/users', methods=['POST', 'GET'])
 def lwp_users():
     '''
     returns users and get posts request : can edit or add user in page.
@@ -511,237 +515,227 @@ def lwp_users():
 
 
 @app.route('/checkconfig')
+@if_superuser
 def checkconfig():
     '''
     returns the display of lxc-checkconfig command
     '''
-    if 'logged_in' in session:
-        if session['su'] != 'Yes':
-            return abort(403)
-
-        return render_template('checkconfig.html', containers=lxc.ls(),
-                               cfg=lxc.checkconfig())
-    return render_template('login.html')
+    return render_template('checkconfig.html', containers=lxc.ls(), cfg=lxc.checkconfig())
 
 
 @app.route('/action', methods=['GET'])
+@if_auth
 def action():
     '''
     manage all actions related to containers
     lxc-start, lxc-stop, etc...
     '''
-    if 'logged_in' in session:
-        if request.args['token'] == session.get('token'):
-            action = request.args['action']
-            name = request.args['name']
+    if request.args['token'] == session.get('token'):
+        action = request.args['action']
+        name = request.args['name']
 
-            if action == 'start':
-                try:
-                    if lxc.start(name) == 0:
-                        # Fix bug : "the container is randomly not
-                        #            displayed in overview list after a boot"
-                        time.sleep(1)
-                        flash(u'Container %s started successfully!' % name,
-                              'success')
-                    else:
-                        flash(u'Unable to start %s!' % name, 'error')
-                except lxc.ContainerAlreadyRunning:
-                    flash(u'Container %s is already running!' % name, 'error')
-            elif action == 'stop':
-                try:
-                    if lxc.stop(name) == 0:
-                        flash(u'Container %s stopped successfully!' % name,
-                              'success')
-                    else:
-                        flash(u'Unable to stop %s!' % name, 'error')
-                except lxc.ContainerNotRunning:
-                    flash(u'Container %s is already stopped!' % name, 'error')
-            elif action == 'freeze':
-                try:
-                    if lxc.freeze(name) == 0:
-                        flash(u'Container %s frozen successfully!' % name,
-                              'success')
-                    else:
-                        flash(u'Unable to freeze %s!' % name, 'error')
-                except lxc.ContainerNotRunning:
-                    flash(u'Container %s not running!' % name, 'error')
-            elif action == 'unfreeze':
-                try:
-                    if lxc.unfreeze(name) == 0:
-                        flash(u'Container %s unfrozen successfully!' % name,
-                              'success')
-                    else:
-                        flash(u'Unable to unfeeze %s!' % name, 'error')
-                except lxc.ContainerNotRunning:
-                    flash(u'Container %s not frozen!' % name, 'error')
-            elif action == 'destroy':
-                if session['su'] != 'Yes':
-                    return abort(403)
-                try:
-                    if lxc.destroy(name) == 0:
-                        flash(u'Container %s destroyed successfully!' % name,
-                              'success')
-                    else:
-                        flash(u'Unable to destroy %s!' % name, 'error')
-                except lxc.ContainerDoesntExists:
-                    flash(u'The Container %s does not exists!' % name, 'error')
-            elif action == 'reboot' and name == 'host':
-                if session['su'] != 'Yes':
-                    return abort(403)
-                msg = '\v*** LXC Web Panel *** \
-                        \nReboot from web panel'
-                try:
-                    subprocess.check_call('/sbin/shutdown -r now \'%s\'' % msg,
-                                          shell=True)
-                    flash(u'System will now restart!', 'success')
-                except:
-                    flash(u'System error!', 'error')
-        try:
-            if request.args['from'] == 'edit':
-                return redirect('../%s/edit' % name)
-            else:
-                return redirect(url_for('home'))
-        except:
+        if action == 'start':
+            try:
+                if lxc.start(name) == 0:
+                    # Fix bug : "the container is randomly not
+                    #            displayed in overview list after a boot"
+                    time.sleep(1)
+                    flash(u'Container %s started successfully!' % name,
+                          'success')
+                else:
+                    flash(u'Unable to start %s!' % name, 'error')
+            except lxc.ContainerAlreadyRunning:
+                flash(u'Container %s is already running!' % name, 'error')
+        elif action == 'stop':
+            try:
+                if lxc.stop(name) == 0:
+                    flash(u'Container %s stopped successfully!' % name,
+                          'success')
+                else:
+                    flash(u'Unable to stop %s!' % name, 'error')
+            except lxc.ContainerNotRunning:
+                flash(u'Container %s is already stopped!' % name, 'error')
+        elif action == 'freeze':
+            try:
+                if lxc.freeze(name) == 0:
+                    flash(u'Container %s frozen successfully!' % name,
+                          'success')
+                else:
+                    flash(u'Unable to freeze %s!' % name, 'error')
+            except lxc.ContainerNotRunning:
+                flash(u'Container %s not running!' % name, 'error')
+        elif action == 'unfreeze':
+            try:
+                if lxc.unfreeze(name) == 0:
+                    flash(u'Container %s unfrozen successfully!' % name,
+                          'success')
+                else:
+                    flash(u'Unable to unfeeze %s!' % name, 'error')
+            except lxc.ContainerNotRunning:
+                flash(u'Container %s not frozen!' % name, 'error')
+        elif action == 'destroy':
+            if session['su'] != 'Yes':
+                return abort(403)
+            try:
+                if lxc.destroy(name) == 0:
+                    flash(u'Container %s destroyed successfully!' % name,
+                          'success')
+                else:
+                    flash(u'Unable to destroy %s!' % name, 'error')
+            except lxc.ContainerDoesntExists:
+                flash(u'The Container %s does not exists!' % name, 'error')
+        elif action == 'reboot' and name == 'host':
+            if session['su'] != 'Yes':
+                return abort(403)
+            msg = '\v*** LXC Web Panel *** \
+                    \nReboot from web panel'
+            try:
+                subprocess.check_call('/sbin/shutdown -r now \'%s\'' % msg,
+                                      shell=True)
+                flash(u'System will now restart!', 'success')
+            except:
+                flash(u'System error!', 'error')
+    try:
+        if request.args['from'] == 'edit':
+            return redirect('../%s/edit' % name)
+        else:
             return redirect(url_for('home'))
-    return render_template('login.html')
+    except:
+        return redirect(url_for('home'))
 
 
 @app.route('/action/create-container', methods=['GET', 'POST'])
+@if_auth
+@if_superuser
 def create_container():
     '''
     verify all forms to create a container
     '''
-    if 'logged_in' in session:
-        if session['su'] != 'Yes':
-            return abort(403)
-        if request.method == 'POST':
-            name = request.form['name']
-            template = request.form['template']
-            command = request.form['command']
+    if request.method == 'POST':
+        name = request.form['name']
+        template = request.form['template']
+        command = request.form['command']
 
-            if re.match('^(?!^containers$)|[a-zA-Z0-9_-]+$', name):
-                storage_method = request.form['backingstore']
+        if re.match('^(?!^containers$)|[a-zA-Z0-9_-]+$', name):
+            storage_method = request.form['backingstore']
 
-                if storage_method == 'default':
+            if storage_method == 'default':
+                try:
+                    if lxc.create(name, template=template,
+                                  xargs=command) == 0:
+                        flash(u'Container %s created successfully!' % name,
+                              'success')
+                    else:
+                        flash(u'Failed to create %s!' % name, 'error')
+                except lxc.ContainerAlreadyExists:
+                    flash(u'The Container %s is already created!' % name,
+                          'error')
+                except subprocess.CalledProcessError:
+                    flash(u'Error!' % name, 'error')
+
+            elif storage_method == 'directory':
+                directory = request.form['dir']
+
+                if re.match('^/[a-zA-Z0-9_/-]+$', directory) and \
+                        directory != '':
                     try:
                         if lxc.create(name, template=template,
+                                      storage='dir --dir %s' % directory,
                                       xargs=command) == 0:
-                            flash(u'Container %s created successfully!' % name,
-                                  'success')
+                            flash(u'Container %s created successfully!'
+                                  % name, 'success')
                         else:
                             flash(u'Failed to create %s!' % name, 'error')
                     except lxc.ContainerAlreadyExists:
-                        flash(u'The Container %s is already created!' % name,
-                              'error')
+                        flash(u'The Container %s is already created!'
+                              % name, 'error')
                     except subprocess.CalledProcessError:
                         flash(u'Error!' % name, 'error')
 
-                elif storage_method == 'directory':
-                    directory = request.form['dir']
+            elif storage_method == 'lvm':
+                lvname = request.form['lvname']
+                vgname = request.form['vgname']
+                fstype = request.form['fstype']
+                fssize = request.form['fssize']
+                storage_options = 'lvm'
 
-                    if re.match('^/[a-zA-Z0-9_/-]+$', directory) and \
-                            directory != '':
-                        try:
-                            if lxc.create(name, template=template,
-                                          storage='dir --dir %s' % directory,
-                                          xargs=command) == 0:
-                                flash(u'Container %s created successfully!'
-                                      % name, 'success')
-                            else:
-                                flash(u'Failed to create %s!' % name, 'error')
-                        except lxc.ContainerAlreadyExists:
-                            flash(u'The Container %s is already created!'
-                                  % name, 'error')
-                        except subprocess.CalledProcessError:
-                            flash(u'Error!' % name, 'error')
+                if re.match('^[a-zA-Z0-9_-]+$', lvname) and lvname != '':
+                    storage_options += ' --lvname %s' % lvname
+                if re.match('^[a-zA-Z0-9_-]+$', vgname) and vgname != '':
+                    storage_options += ' --vgname %s' % vgname
+                if re.match('^[a-z0-9]+$', fstype) and fstype != '':
+                    storage_options += ' --fstype %s' % fstype
+                if re.match('^[0-9][G|M]$', fssize) and fssize != '':
+                    storage_options += ' --fssize %s' % fssize
 
-                elif storage_method == 'lvm':
-                    lvname = request.form['lvname']
-                    vgname = request.form['vgname']
-                    fstype = request.form['fstype']
-                    fssize = request.form['fssize']
-                    storage_options = 'lvm'
-
-                    if re.match('^[a-zA-Z0-9_-]+$', lvname) and lvname != '':
-                        storage_options += ' --lvname %s' % lvname
-                    if re.match('^[a-zA-Z0-9_-]+$', vgname) and vgname != '':
-                        storage_options += ' --vgname %s' % vgname
-                    if re.match('^[a-z0-9]+$', fstype) and fstype != '':
-                        storage_options += ' --fstype %s' % fstype
-                    if re.match('^[0-9][G|M]$', fssize) and fssize != '':
-                        storage_options += ' --fssize %s' % fssize
-
-                    try:
-                        if lxc.create(name, template=template,
-                                      storage=storage_options,
-                                      xargs=command) == 0:
-                            flash(u'Container %s created successfully!' % name,
-                                  'success')
-                        else:
-                            flash(u'Failed to create %s!' % name, 'error')
-                    except lxc.ContainerAlreadyExists:
-                        flash(u'The container/logical volume %s is '
-                              'already created!' % name, 'error')
-                    except subprocess.CalledProcessError:
-                        flash(u'Error!' % name, 'error')
-
-                else:
-                    flash(u'Missing parameters to create container!', 'error')
+                try:
+                    if lxc.create(name, template=template,
+                                  storage=storage_options,
+                                  xargs=command) == 0:
+                        flash(u'Container %s created successfully!' % name,
+                              'success')
+                    else:
+                        flash(u'Failed to create %s!' % name, 'error')
+                except lxc.ContainerAlreadyExists:
+                    flash(u'The container/logical volume %s is '
+                          'already created!' % name, 'error')
+                except subprocess.CalledProcessError:
+                    flash(u'Error!' % name, 'error')
 
             else:
-                if name == '':
-                    flash(u'Please enter a container name!', 'error')
-                else:
-                    flash(u'Invalid name for \"%s\"!' % name, 'error')
+                flash(u'Missing parameters to create container!', 'error')
 
-        return redirect(url_for('home'))
-    return render_template('login.html')
+        else:
+            if name == '':
+                flash(u'Please enter a container name!', 'error')
+            else:
+                flash(u'Invalid name for \"%s\"!' % name, 'error')
+
+    return redirect(url_for('home'))
 
 
 @app.route('/action/clone-container', methods=['GET', 'POST'])
+@if_auth
+@if_superuser
 def clone_container():
     '''
     verify all forms to clone a container
     '''
-    if 'logged_in' in session:
-        if session['su'] != 'Yes':
-            return abort(403)
-        if request.method == 'POST':
-            orig = request.form['orig']
-            name = request.form['name']
+    if request.method == 'POST':
+        orig = request.form['orig']
+        name = request.form['name']
+
+        try:
+            snapshot = request.form['snapshot']
+            if snapshot == 'True':
+                snapshot = True
+        except KeyError:
+            snapshot = False
+
+        if re.match('^(?!^containers$)|[a-zA-Z0-9_-]+$', name):
+            out = None
 
             try:
-                snapshot = request.form['snapshot']
-                if snapshot == 'True':
-                    snapshot = True
-            except KeyError:
-                snapshot = False
+                out = lxc.clone(orig=orig, new=name, snapshot=snapshot)
+            except lxc.ContainerAlreadyExists:
+                flash(u'The Container %s already exists!' % name, 'error')
+            except subprocess.CalledProcessError:
+                flash(u'Can\'t snapshot a directory', 'error')
 
-            if re.match('^(?!^containers$)|[a-zA-Z0-9_-]+$', name):
-                out = None
+            if out and out == 0:
+                flash(u'Container %s cloned into %s successfully!'
+                      % (orig, name), 'success')
+            elif out and out != 0:
+                flash(u'Failed to clone %s into %s!' % (orig, name),
+                      'error')
 
-                try:
-                    out = lxc.clone(orig=orig, new=name, snapshot=snapshot)
-                except lxc.ContainerAlreadyExists:
-                    flash(u'The Container %s already exists!' % name, 'error')
-                except subprocess.CalledProcessError:
-                    flash(u'Can\'t snapshot a directory', 'error')
-
-                if out and out == 0:
-                    flash(u'Container %s cloned into %s successfully!'
-                          % (orig, name), 'success')
-                elif out and out != 0:
-                    flash(u'Failed to clone %s into %s!' % (orig, name),
-                          'error')
-
+        else:
+            if name == '':
+                flash(u'Please enter a container name!', 'error')
             else:
-                if name == '':
-                    flash(u'Please enter a container name!', 'error')
-                else:
-                    flash(u'Invalid name for \"%s\"!' % name, 'error')
+                flash(u'Invalid name for \"%s\"!' % name, 'error')
 
-        return redirect(url_for('home'))
-    return render_template('login.html')
+    return redirect(url_for('home'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -775,12 +769,7 @@ def login():
 
 @app.route('/logout')
 def logout():
-    session.pop('logged_in', None)
-    session.pop('token', None)
-    session.pop('last_activity', None)
-    session.pop('username', None)
-    session.pop('name', None)
-    session.pop('su', None)
+    session.clear()
     flash(u'You are logged out!', 'success')
     return redirect(url_for('login'))
 

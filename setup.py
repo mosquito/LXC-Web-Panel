@@ -17,6 +17,7 @@ supports = {
     'install_requires': [
         'flask==0.9',
         'arconfig',
+        'object_cacher',
     ]
 }
 
@@ -42,4 +43,3 @@ setup(
     packages=find_packages(),
     **supports
 )
-

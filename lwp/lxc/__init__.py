@@ -250,12 +250,7 @@ def check_version():
     '''
     returns latest LWP version (dict with current and latest)
     '''
-    f = open('version')
-    current = float(f.read())
-    f.close()
-    latest = float(urlopen('http://lxc-webpanel.github.com/version').read())
-    return {'current': current,
-            'latest': latest}
+    return {'current': None }
 
 
 def get_net_settings():
