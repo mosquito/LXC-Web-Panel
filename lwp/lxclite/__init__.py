@@ -126,7 +126,7 @@ def clone(orig=None, new=None, snapshot=False):
         return _run(command)
 
 
-@ObjectCacher(oid="lxc.info")
+@ObjectCacher(oid="lxc.info", timeout=5)
 def info(container):
     '''
     Check info from lxc-info
@@ -154,7 +154,7 @@ def info(container):
     return params
 
 
-@ObjectCacher(oid="lxc.list")
+@ObjectCacher(oid="lxc.list", timeout=20)
 def ls():
     '''
     List containers directory
