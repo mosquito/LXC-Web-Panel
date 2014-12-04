@@ -9,7 +9,7 @@ except ImportError:
     from distutils.core import setup
 
 
-__version__ = '0.2-pre2'
+__version__ = '0.2-pre3'
 __author__ = 'Élie Deloumeau, Antoine Tanzilli'
 
 
