@@ -775,43 +775,48 @@ def logout():
 
 
 @app.route('/_refresh_cpu_host')
+@if_auth
+@ObjectCacher(timeout=5)
 def refresh_cpu_host():
-    if 'logged_in' in session:
-        return lwp.host_cpu_percent()
+    return lwp.host_cpu_percent()
 
 
 @app.route('/_refresh_uptime_host')
+@if_auth
+@ObjectCacher(timeout=5)
 def refresh_uptime_host():
-    if 'logged_in' in session:
-        return jsonify(lwp.host_uptime())
+    return jsonify(lwp.host_uptime())
 
 
 @app.route('/_refresh_disk_host')
+@if_auth
+@ObjectCacher(timeout=5)
 def refresh_disk_host():
-    if 'logged_in' in session:
-        return jsonify(lwp.host_disk_usage(directory=app.options.directory))
+    return jsonify(lwp.host_disk_usage(directory=app.options.directory))
 
 
 @app.route('/_refresh_memory_<name>')
+@if_auth
+@ObjectCacher(timeout=5)
 def refresh_memory_containers(name=None):
-    if 'logged_in' in session:
-        if name == 'containers':
-            containers_running = lxc.running()
-            containers = []
-            for container in containers_running:
-                container = container.replace(' (auto)', '')
-                containers.append({'name': container,
-                                   'memusg': lwp.memory_usage(container)})
-            return jsonify(data=containers)
-        elif name == 'host':
-            return jsonify(lwp.host_memory_usage())
-        return jsonify({'memusg': lwp.memory_usage(name)})
+    if name == 'containers':
+        containers_running = lxc.running()
+        containers = []
+        for container in containers_running:
+            container = container.replace(' (auto)', '')
+            containers.append({'name': container,
+                               'memusg': lwp.memory_usage(container)})
+        return jsonify(data=containers)
+    elif name == 'host':
+        return jsonify(lwp.host_memory_usage())
+    return jsonify({'memusg': lwp.memory_usage(name)})
 
 
 @app.route('/_check_version')
+@if_auth
+@ObjectCacher(timeout=5)
 def check_version():
-    if 'logged_in' in session:
-        return jsonify(lwp.check_version())
+    return jsonify(lwp.check_version())
 
 
 def hash_passwd(passwd):
