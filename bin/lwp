@@ -1,0 +1,88 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+# LXC Python Library
+# for compatibility with LXC 0.8 and 0.9
+# on Ubuntu 12.04/12.10/13.04
+
+# Author: Elie Deloumeau
+# Contact: elie@deloumeau.fr
+
+# The MIT License (MIT)
+# Copyright (c) 2013 Elie Deloumeau
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+import argparse
+import logging
+from arconfig import GenConfigAction, LoadConfigAction
+from uuid import uuid1
+import os
+
+parser = argparse.ArgumentParser("lwp")
+parser.add_argument("--config", action=LoadConfigAction)
+parser.add_argument("--gen-config", action=GenConfigAction)
+parser.add_argument("--debug", default=False, action="store_true", help="Debug logging")
+
+group = parser.add_argument_group("database")
+group.add_argument("-D", "--db-file", dest="db",
+                   default="/var/lib/lxc/lwp.db",
+                   help="Database file [default: /var/lib/lxc/lwp.db]")
+
+group = parser.add_argument_group("main")
+group.add_argument("-l", "--address", default="0.0.0.0", help="Listen HTTP address [default: 0.0.0.0]", dest="address")
+group.add_argument("-p", "--port", default=5000, help="Listen HTTP port [default: 5000]", type=int, dest="port")
+group.add_argument("--session-timeout", default=600, type=int, dest="session_timeout")
+group.add_argument("-S", "--secret", default=str(uuid1()), dest="secret")
+
+
+from lwp.app import app
+
+
+def main(host='0.0.0.0', port=5000):
+    log = logging.getLogger("lwp")
+    if not os.path.exists(app.options.directory):
+        log.fatal("LXC Directory doesn't exists")
+        return 128
+    try:
+        import eventlet
+        from eventlet import wsgi
+        log.info("Starting through eventlet")
+        wsgi.server(eventlet.listen((host, port)), app)
+    except ImportError:
+        log.info("Starting through default WSGI engine")
+        app.run(host=host, port=port)
+
+    return 0
+
+
+if __name__ == '__main__':
+    with app.app_context() as c:
+        app.options = parser.parse_args()
+        app.options.directory = '/var/lib/lxc'
+        app.config['SECRET_KEY'] = app.options.secret
+
+        logging.basicConfig(
+            format=u'[%(asctime)s] %(filename)s:%(lineno)d %(levelname)-6s %(message)s',
+            level=logging.INFO if app.options.debug else logging.DEBUG
+        )
+        exit(main(
+            host=app.options.address,
+            port=app.options.port
+        ))
