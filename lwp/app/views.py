@@ -308,8 +308,8 @@ def lxc_net():
                        '[01]?[0-9][0-9]?)'
 
             form = {
-                'use': request.form.get('use', 'false')
-                'bridge': request.form.get('bridge')
+                'use': request.form.get('use', 'false'),
+                'bridge': request.form.get('bridge'),
                 'address': request.form.get('address'),
                 'netmask': request.form.get('netmask'),
                 'network': request.form.get('network'),
