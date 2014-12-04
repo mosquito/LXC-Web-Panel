@@ -52,9 +52,9 @@ def _run(cmd, output=False):
 
     try:
         subprocess.check_call('{}'.format(cmd), shell=True, universal_newlines=True)  # returns 0 for True
-        return True
-    except subprocess.CalledProcessError:
-        return False
+        return 0
+    except subprocess.CalledProcessError as e:
+        return e.returncode
 
 
 class ContainerAlreadyExists(Exception):
