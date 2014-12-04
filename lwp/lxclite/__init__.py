@@ -303,7 +303,7 @@ def destroy(container):
     return _run('lxc-destroy -n {}'.format(container))
 
 
-@ObjectCacher(oid="lxc.list", timeout=5)
+@ObjectCacher(oid="lxc.chkconfig", timeout=5)
 def checkconfig():
     '''
     Returns the output of lxc-checkconfig (colors cleared)

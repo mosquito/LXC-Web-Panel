@@ -34,7 +34,7 @@ def if_auth(func):
         if 'logged_in' in session:
             return func(*args, **kwargs)
         else:
-            return render_template('login.html')
+            return render_template('login.html'), 403
 
     return wrap
 

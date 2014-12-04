@@ -38,7 +38,7 @@ import os
 parser = argparse.ArgumentParser("lwp")
 parser.add_argument("--config", action=LoadConfigAction)
 parser.add_argument("--gen-config", action=GenConfigAction)
-parser.add_argument("--debug", default=False, action="store_true", help="Debug logging")
+parser.add_argument("--debug", default=False, action="store_true", help="Debugging output")
 
 group = parser.add_argument_group("database")
 group.add_argument("-D", "--db-file", dest="db",
@@ -50,6 +50,13 @@ group.add_argument("-l", "--address", default="0.0.0.0", help="Listen HTTP addre
 group.add_argument("-p", "--port", default=5000, help="Listen HTTP port [default: 5000]", type=int, dest="port")
 group.add_argument("--session-timeout", default=600, type=int, dest="session_timeout")
 group.add_argument("-S", "--secret", default=str(uuid1()), dest="secret")
+
+if __name__ == '__main__':
+    options = parser.parse_args()
+    logging.basicConfig(
+        format=u'[%(asctime)s] %(filename)s:%(lineno)d %(levelname)-6s %(message)s',
+        level=logging.INFO if options.debug else logging.DEBUG
+    )
 
 
 from lwp.app import app
@@ -74,14 +81,10 @@ def main(host='0.0.0.0', port=5000):
 
 if __name__ == '__main__':
     with app.app_context() as c:
-        app.options = parser.parse_args()
+        app.options = options
         app.options.directory = '/var/lib/lxc'
         app.config['SECRET_KEY'] = app.options.secret
 
-        logging.basicConfig(
-            format=u'[%(asctime)s] %(filename)s:%(lineno)d %(levelname)-6s %(message)s',
-            level=logging.INFO if app.options.debug else logging.DEBUG
-        )
         exit(main(
             host=app.options.address,
             port=app.options.port
