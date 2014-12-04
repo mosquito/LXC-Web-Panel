@@ -2,6 +2,7 @@
 # encoding: utf-8
 from __future__ import absolute_import
 
+from functools import wraps
 import lwp.lxclite as lxc
 import lwp.lxc as lwp
 import subprocess
@@ -12,9 +13,29 @@ import sqlite3
 import os
 
 from flask import request, session, g, redirect, url_for, abort, render_template, flash, jsonify
-
-
 from . import app
+
+
+def if_superuser(func):
+    @wraps(func)
+    def wrap(*args, **kwargs):
+        if session['su'] != 'Yes':
+            return abort(403)
+        else:
+            return func(*args, **kwargs)
+    return wrap
+
+
+def if_auth(func):
+    @wraps(func)
+    def wrap(*args, **kwargs):
+        if 'logged_in' in session:
+            return func(*args, **kwargs)
+        else:
+            return render_template('login.html')
+
+    return wrap
+
 
 def connect_db():
     '''
@@ -44,480 +65,449 @@ def teardown_request(exception):
         g.db.close()
 
 
-@app.route('/')
 @app.route('/home')
 def home():
     '''
     home page function
     '''
 
-    if 'logged_in' in session:
-        listx = lxc.listx()
-        containers_all = []
+    listx = lxc.listx()
+    containers_all = []
 
-        for status in ['RUNNING', 'FROZEN', 'STOPPED']:
-            containers_by_status = []
+    for status in ['RUNNING', 'FROZEN', 'STOPPED']:
+        containers_by_status = []
 
-            for container in listx[status]:
-                containers_by_status.append({
-                    'name': container,
-                    'memusg': lwp.memory_usage(container),
-                    'settings': lwp.get_container_settings(container)
-                })
-            containers_all.append({
-                'status': status.lower(),
-                'containers': containers_by_status
+        for container in listx[status]:
+            containers_by_status.append({
+                'name': container,
+                'memusg': lwp.memory_usage(container),
+                'settings': lwp.get_container_settings(container)
             })
+        containers_all.append({
+            'status': status.lower(),
+            'containers': containers_by_status
+        })
 
-        return render_template('index.html', containers=lxc.ls(),
-                               containers_all=containers_all,
-                               dist=lwp.check_ubuntu(),
-                               templates=lwp.get_templates_list())
-    return render_template('login.html')
+    return render_template('index.html', containers=lxc.ls(),
+                           containers_all=containers_all,
+                           dist=lwp.check_ubuntu(),
+                           templates=lwp.get_templates_list())
 
 
+@if_auth
+@app.route('/')
+def index():
+    return redirect(url_for(home), code=302)
+
+
+@if_auth
 @app.route('/about')
 def about():
     '''
     about page
     '''
 
-    if 'logged_in' in session:
-        return render_template('about.html', containers=lxc.ls(),
-                               version=lwp.check_version())
-    return render_template('login.html')
+    return render_template('about.html', containers=lxc.ls(), version=lwp.check_version())
 
 
+@if_auth
 @app.route('/<container>/edit', methods=['POST', 'GET'])
 def edit(container=None):
     '''
     edit containers page and actions if form post request
     '''
 
-    if 'logged_in' in session:
-        host_memory = lwp.host_memory_usage()
-        if request.method == 'POST':
-            cfg = lwp.get_container_settings(container)
-            ip_regex = '(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).(25[0-5]' \
-                       '|2[0-4][0-9]|[01]?[0-9][0-9]?).(25[0-5]|2[0-4]' \
-                       '[0-9]|[01]?[0-9][0-9]?).(25[0-5]|2[0-4][0-9]|[01]' \
-                       '?[0-9][0-9]?)(/(3[0-2]|[12]?[0-9]))?'
-            info = lxc.info(container)
+    host_memory = lwp.host_memory_usage()
+    if request.method == 'POST':
+        cfg = lwp.get_container_settings(container)
+        ip_regex = '(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).(25[0-5]' \
+                   '|2[0-4][0-9]|[01]?[0-9][0-9]?).(25[0-5]|2[0-4]' \
+                   '[0-9]|[01]?[0-9][0-9]?).(25[0-5]|2[0-4][0-9]|[01]' \
+                   '?[0-9][0-9]?)(/(3[0-2]|[12]?[0-9]))?'
+        info = lxc.info(container)
 
-            form = {}
-            form['type'] = request.form['type']
-            form['link'] = request.form['link']
-            try:
-                form['flags'] = request.form['flags']
-            except KeyError:
-                form['flags'] = 'down'
-            form['hwaddr'] = request.form['hwaddress']
-            form['rootfs'] = request.form['rootfs']
-            form['utsname'] = request.form['hostname']
-            form['ipv4'] = request.form['ipaddress']
-            form['memlimit'] = request.form['memlimit']
-            form['swlimit'] = request.form['swlimit']
-            form['cpus'] = request.form['cpus']
-            form['shares'] = request.form['cpushares']
-            try:
-                form['autostart'] = request.form['autostart']
-            except KeyError:
-                form['autostart'] = False
+        form = {}
+        form['type'] = request.form['type']
+        form['link'] = request.form['link']
+        try:
+            form['flags'] = request.form['flags']
+        except KeyError:
+            form['flags'] = 'down'
+        form['hwaddr'] = request.form['hwaddress']
+        form['rootfs'] = request.form['rootfs']
+        form['utsname'] = request.form['hostname']
+        form['ipv4'] = request.form['ipaddress']
+        form['memlimit'] = request.form['memlimit']
+        form['swlimit'] = request.form['swlimit']
+        form['cpus'] = request.form['cpus']
+        form['shares'] = request.form['cpushares']
+        try:
+            form['autostart'] = request.form['autostart']
+        except KeyError:
+            form['autostart'] = False
 
-            if form['utsname'] != cfg['utsname'] and \
-                    re.match('(?!^containers$)|^(([a-zA-Z0-9]|[a-zA-Z0-9]'
-                             '[a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|'
-                             '[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$',
-                             form['utsname']):
-                lwp.push_config_value('lxc.utsname', form['utsname'],
+        if form['utsname'] != cfg['utsname'] and \
+                re.match('(?!^containers$)|^(([a-zA-Z0-9]|[a-zA-Z0-9]'
+                         '[a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|'
+                         '[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$',
+                         form['utsname']):
+            lwp.push_config_value('lxc.utsname', form['utsname'],
+                                  container=container)
+            flash(u'Hostname updated for %s!' % container, 'success')
+
+        if form['flags'] != cfg['flags'] and \
+                re.match('^(up|down)$', form['flags']):
+            lwp.push_config_value('lxc.network.flags', form['flags'],
+                                  container=container)
+            flash(u'Network flag updated for %s!' % container, 'success')
+
+        if form['type'] != cfg['type'] and \
+                re.match('^\w+$', form['type']):
+            lwp.push_config_value('lxc.network.type', form['type'],
+                                  container=container)
+            flash(u'Link type updated for %s!' % container, 'success')
+
+        if form['link'] != cfg['link'] and \
+                re.match('^[a-zA-Z0-9_-]+$', form['link']):
+            lwp.push_config_value('lxc.network.link', form['link'],
+                                  container=container)
+            flash(u'Link name updated for %s!' % container, 'success')
+
+        if form['hwaddr'] != cfg['hwaddr'] and \
+                re.match('^([a-fA-F0-9]{2}[:|\-]?){6}$', form['hwaddr']):
+            lwp.push_config_value('lxc.network.hwaddr', form['hwaddr'],
+                                  container=container)
+            flash(u'Hardware address updated for %s!' % container,
+                  'success')
+
+        if (not form['ipv4'] and form['ipv4'] != cfg['ipv4']) or \
+                (form['ipv4'] != cfg['ipv4'] and
+                 re.match('^%s$' % ip_regex, form['ipv4'])):
+            lwp.push_config_value('lxc.network.ipv4', form['ipv4'],
+                                  container=container)
+            flash(u'IP address updated for %s!' % container, 'success')
+
+        if form['memlimit'] != cfg['memlimit'] and \
+                form['memlimit'].isdigit() and \
+                int(form['memlimit']) <= int(host_memory['total']):
+            if int(form['memlimit']) == int(host_memory['total']):
+                form['memlimit'] = ''
+
+            if form['memlimit'] != cfg['memlimit']:
+                lwp.push_config_value('lxc.cgroup.memory.limit_in_bytes',
+                                      form['memlimit'],
                                       container=container)
-                flash(u'Hostname updated for %s!' % container, 'success')
-
-            if form['flags'] != cfg['flags'] and \
-                    re.match('^(up|down)$', form['flags']):
-                lwp.push_config_value('lxc.network.flags', form['flags'],
-                                      container=container)
-                flash(u'Network flag updated for %s!' % container, 'success')
-
-            if form['type'] != cfg['type'] and \
-                    re.match('^\w+$', form['type']):
-                lwp.push_config_value('lxc.network.type', form['type'],
-                                      container=container)
-                flash(u'Link type updated for %s!' % container, 'success')
-
-            if form['link'] != cfg['link'] and \
-                    re.match('^[a-zA-Z0-9_-]+$', form['link']):
-                lwp.push_config_value('lxc.network.link', form['link'],
-                                      container=container)
-                flash(u'Link name updated for %s!' % container, 'success')
-
-            if form['hwaddr'] != cfg['hwaddr'] and \
-                    re.match('^([a-fA-F0-9]{2}[:|\-]?){6}$', form['hwaddr']):
-                lwp.push_config_value('lxc.network.hwaddr', form['hwaddr'],
-                                      container=container)
-                flash(u'Hardware address updated for %s!' % container,
+                if info["state"].lower() != 'stopped':
+                    lxc.cgroup(container,
+                               'lxc.cgroup.memory.limit_in_bytes',
+                               form['memlimit'])
+                flash(u'Memory limit updated for %s!' % container,
                       'success')
 
-            if (not form['ipv4'] and form['ipv4'] != cfg['ipv4']) or \
-                    (form['ipv4'] != cfg['ipv4'] and
-                     re.match('^%s$' % ip_regex, form['ipv4'])):
-                lwp.push_config_value('lxc.network.ipv4', form['ipv4'],
-                                      container=container)
-                flash(u'IP address updated for %s!' % container, 'success')
+        if form['swlimit'] != cfg['swlimit'] and \
+                form['swlimit'].isdigit() and \
+                int(form['swlimit']) <= int(host_memory['total'] * 2):
+            if int(form['swlimit']) == int(host_memory['total'] * 2):
+                form['swlimit'] = ''
 
-            if form['memlimit'] != cfg['memlimit'] and \
-                    form['memlimit'].isdigit() and \
-                    int(form['memlimit']) <= int(host_memory['total']):
-                if int(form['memlimit']) == int(host_memory['total']):
-                    form['memlimit'] = ''
+            if form['swlimit'].isdigit():
+                form['swlimit'] = int(form['swlimit'])
 
-                if form['memlimit'] != cfg['memlimit']:
-                    lwp.push_config_value('lxc.cgroup.memory.limit_in_bytes',
-                                          form['memlimit'],
-                                          container=container)
-                    if info["state"].lower() != 'stopped':
-                        lxc.cgroup(container,
-                                   'lxc.cgroup.memory.limit_in_bytes',
-                                   form['memlimit'])
-                    flash(u'Memory limit updated for %s!' % container,
-                          'success')
+            if form['memlimit'].isdigit():
+                form['memlimit'] = int(form['memlimit'])
 
-            if form['swlimit'] != cfg['swlimit'] and \
-                    form['swlimit'].isdigit() and \
-                    int(form['swlimit']) <= int(host_memory['total'] * 2):
-                if int(form['swlimit']) == int(host_memory['total'] * 2):
-                    form['swlimit'] = ''
+            if (form['memlimit'] == '' and form['swlimit'] != '') or \
+                    (form['memlimit'] > form['swlimit'] and
+                     form['swlimit'] != ''):
+                flash(u'Can\'t assign swap memory lower than'
+                      ' the memory limit', 'warning')
 
-                if form['swlimit'].isdigit():
-                    form['swlimit'] = int(form['swlimit'])
-
-                if form['memlimit'].isdigit():
-                    form['memlimit'] = int(form['memlimit'])
-
-                if (form['memlimit'] == '' and form['swlimit'] != '') or \
-                        (form['memlimit'] > form['swlimit'] and
-                         form['swlimit'] != ''):
-                    flash(u'Can\'t assign swap memory lower than'
-                          ' the memory limit', 'warning')
-
-                elif form['swlimit'] != cfg['swlimit'] and \
-                        form['memlimit'] <= form['swlimit']:
-                    lwp.push_config_value(
-                        'lxc.cgroup.memory.memsw.limit_in_bytes',
-                        form['swlimit'], container=container)
-
-                    if info["state"].lower() != 'stopped':
-                        lxc.cgroup(container,
-                                   'lxc.cgroup.memory.memsw.limit_in_bytes',
-                                   form['swlimit'])
-                    flash(u'Swap limit updated for %s!' % container, 'success')
-
-            if (not form['cpus'] and form['cpus'] != cfg['cpus']) or \
-                    (form['cpus'] != cfg['cpus'] and
-                     re.match('^[0-9,-]+$', form['cpus'])):
-                lwp.push_config_value('lxc.cgroup.cpuset.cpus', form['cpus'],
-                                      container=container)
+            elif form['swlimit'] != cfg['swlimit'] and \
+                    form['memlimit'] <= form['swlimit']:
+                lwp.push_config_value(
+                    'lxc.cgroup.memory.memsw.limit_in_bytes',
+                    form['swlimit'], container=container)
 
                 if info["state"].lower() != 'stopped':
-                        lxc.cgroup(container, 'lxc.cgroup.cpuset.cpus',
-                                   form['cpus'])
-                flash(u'CPUs updated for %s!' % container, 'success')
+                    lxc.cgroup(container,
+                               'lxc.cgroup.memory.memsw.limit_in_bytes',
+                               form['swlimit'])
+                flash(u'Swap limit updated for %s!' % container, 'success')
 
-            if (not form['shares'] and form['shares'] != cfg['shares']) or \
-                    (form['shares'] != cfg['shares'] and
-                     re.match('^[0-9]+$', form['shares'])):
-                lwp.push_config_value('lxc.cgroup.cpu.shares', form['shares'],
-                                      container=container)
-                if info["state"].lower() != 'stopped':
-                        lxc.cgroup(container, 'lxc.cgroup.cpu.shares',
-                                   form['shares'])
-                flash(u'CPU shares updated for %s!' % container, 'success')
+        if (not form['cpus'] and form['cpus'] != cfg['cpus']) or \
+                (form['cpus'] != cfg['cpus'] and
+                 re.match('^[0-9,-]+$', form['cpus'])):
+            lwp.push_config_value('lxc.cgroup.cpuset.cpus', form['cpus'],
+                                  container=container)
 
-            if form['rootfs'] != cfg['rootfs'] and \
-                    re.match('^[a-zA-Z0-9_/\-\.]+', form['rootfs']):
-                lwp.push_config_value('lxc.rootfs', form['rootfs'],
-                                      container=container)
-                flash(u'Rootfs updated!' % container, 'success')
+            if info["state"].lower() != 'stopped':
+                lxc.cgroup(container, 'lxc.cgroup.cpuset.cpus',
+                           form['cpus'])
+            flash(u'CPUs updated for %s!' % container, 'success')
 
-            auto = lwp.ls_auto()
-            if form['autostart'] == 'True' and \
-                    not ('%s.conf' % container) in auto:
-                try:
-                    os.symlink('/var/lib/lxc/%s/config' % container,
-                               '/etc/lxc/auto/%s.conf' % container)
-                    flash(u'Autostart enabled for %s' % container, 'success')
-                except OSError:
-                    flash(u'Unable to create symlink \'/etc/lxc/auto/%s.conf\''
-                          % container, 'error')
-            elif not form['autostart'] and ('%s.conf' % container) in auto:
-                try:
-                    os.remove('/etc/lxc/auto/%s.conf' % container)
-                    flash(u'Autostart disabled for %s' % container, 'success')
-                except OSError:
-                    flash(u'Unable to remove symlink', 'error')
+        if (not form['shares'] and form['shares'] != cfg['shares']) or \
+                (form['shares'] != cfg['shares'] and
+                 re.match('^[0-9]+$', form['shares'])):
+            lwp.push_config_value('lxc.cgroup.cpu.shares', form['shares'],
+                                  container=container)
+            if info["state"].lower() != 'stopped':
+                lxc.cgroup(container, 'lxc.cgroup.cpu.shares',
+                           form['shares'])
+            flash(u'CPU shares updated for %s!' % container, 'success')
 
-        info = lxc.info(container)
-        status = info['state']
-        pid = info['pid']
+        if form['rootfs'] != cfg['rootfs'] and \
+                re.match('^[a-zA-Z0-9_/\-\.]+', form['rootfs']):
+            lwp.push_config_value('lxc.rootfs', form['rootfs'],
+                                  container=container)
+            flash(u'Rootfs updated!' % container, 'success')
 
-        infos = {'status': status,
-                 'pid': pid,
-                 'memusg': lwp.memory_usage(container)}
-        return render_template('edit.html', containers=lxc.ls(),
-                               container=container, infos=infos,
-                               settings=lwp.get_container_settings(container),
-                               host_memory=host_memory)
-    return render_template('login.html')
+        auto = lwp.ls_auto()
+        if form['autostart'] == 'True' and \
+                not ('%s.conf' % container) in auto:
+            try:
+                os.symlink('/var/lib/lxc/%s/config' % container,
+                           '/etc/lxc/auto/%s.conf' % container)
+                flash(u'Autostart enabled for %s' % container, 'success')
+            except OSError:
+                flash(u'Unable to create symlink \'/etc/lxc/auto/%s.conf\''
+                      % container, 'error')
+        elif not form['autostart'] and ('%s.conf' % container) in auto:
+            try:
+                os.remove('/etc/lxc/auto/%s.conf' % container)
+                flash(u'Autostart disabled for %s' % container, 'success')
+            except OSError:
+                flash(u'Unable to remove symlink', 'error')
+
+    info = lxc.info(container)
+    status = info['state']
+    pid = info['pid']
+
+    infos = {'status': status,
+             'pid': pid,
+             'memusg': lwp.memory_usage(container)}
+    return render_template('edit.html', containers=lxc.ls(),
+                           container=container, infos=infos,
+                           settings=lwp.get_container_settings(container),
+                           host_memory=host_memory)
 
 
+@if_superuser
+@if_auth
 @app.route('/settings/lxc-net', methods=['POST', 'GET'])
 def lxc_net():
     '''
     lxc-net (/etc/default/lxc) settings page and actions if form post request
     '''
-    if 'logged_in' in session:
-        if session['su'] != 'Yes':
-            return abort(403)
 
-        if request.method == 'POST':
-            if lxc.running() == []:
-                cfg = lwp.get_net_settings()
-                ip_regex = '(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).(25[0-5]' \
-                           '|2[0-4][0-9]|[01]?[0-9][0-9]?).(25[0-5]|2[0-4]' \
-                           '[0-9]|[01]?[0-9][0-9]?).(25[0-5]|2[0-4][0-9]|' \
-                           '[01]?[0-9][0-9]?)'
+    if request.method == 'POST':
+        if lxc.running() == []:
+            cfg = lwp.get_net_settings()
+            ip_regex = '(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).(25[0-5]' \
+                       '|2[0-4][0-9]|[01]?[0-9][0-9]?).(25[0-5]|2[0-4]' \
+                       '[0-9]|[01]?[0-9][0-9]?).(25[0-5]|2[0-4][0-9]|' \
+                       '[01]?[0-9][0-9]?)'
 
-                form = {}
-                try:
-                    form['use'] = request.form['use']
-                except KeyError:
-                    form['use'] = 'false'
+            form = {
+                'use': request.form.get('use', 'false')
+                'bridge': request.form.get('bridge')
+                'address': request.form.get('address'),
+                'netmask': request.form.get('netmask'),
+                'network': request.form.get('network'),
+                'range': request.form.get('range'),
+                'max': request.form.get('max'),
+            }
 
-                try:
-                    form['bridge'] = request.form['bridge']
-                except KeyError:
-                    form['bridge'] = None
+            if form['use'] == 'true' and form['use'] != cfg['use']:
+                lwp.push_net_value('USE_LXC_BRIDGE', 'true')
 
-                try:
-                    form['address'] = request.form['address']
-                except KeyError:
-                    form['address'] = None
+            elif form['use'] == 'false' and form['use'] != cfg['use']:
+                lwp.push_net_value('USE_LXC_BRIDGE', 'false')
 
-                try:
-                    form['netmask'] = request.form['netmask']
-                except KeyError:
-                    form['netmask'] = None
+            if form['bridge'] and form['bridge'] != cfg['bridge'] \
+                    and re.match('^[a-zA-Z0-9_-]+$', form['bridge']):
+                lwp.push_net_value('LXC_BRIDGE', form['bridge'])
 
-                try:
-                    form['network'] = request.form['network']
-                except KeyError:
-                    form['network'] = None
+            if form['address'] and form['address'] != cfg['address'] \
+                    and re.match('^%s$' % ip_regex, form['address']):
+                lwp.push_net_value('LXC_ADDR', form['address'])
 
-                try:
-                    form['range'] = request.form['range']
-                except KeyError:
-                    form['range'] = None
+            if form['netmask'] and form['netmask'] != cfg['netmask'] \
+                    and re.match('^%s$' % ip_regex, form['netmask']):
+                lwp.push_net_value('LXC_NETMASK', form['netmask'])
 
-                try:
-                    form['max'] = request.form['max']
-                except KeyError:
-                    form['max'] = None
+            if form['network'] and form['network'] != cfg['network'] and \
+                    re.match('^%s(?:/\d{1,2}|)$' % ip_regex,
+                             form['network']):
+                lwp.push_net_value('LXC_NETWORK', form['network'])
 
-                if form['use'] == 'true' and form['use'] != cfg['use']:
-                    lwp.push_net_value('USE_LXC_BRIDGE', 'true')
+            if form['range'] and form['range'] != cfg['range'] and \
+                    re.match('^%s,%s$' % (ip_regex, ip_regex),
+                             form['range']):
+                lwp.push_net_value('LXC_DHCP_RANGE', form['range'])
 
-                elif form['use'] == 'false' and form['use'] != cfg['use']:
-                    lwp.push_net_value('USE_LXC_BRIDGE', 'false')
+            if form['max'] and form['max'] != cfg['max'] and \
+                    re.match('^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$',
+                             form['max']):
+                lwp.push_net_value('LXC_DHCP_MAX', form['max'])
 
-                if form['bridge'] and form['bridge'] != cfg['bridge'] \
-                        and re.match('^[a-zA-Z0-9_-]+$', form['bridge']):
-                    lwp.push_net_value('LXC_BRIDGE', form['bridge'])
-
-                if form['address'] and form['address'] != cfg['address'] \
-                        and re.match('^%s$' % ip_regex, form['address']):
-                    lwp.push_net_value('LXC_ADDR', form['address'])
-
-                if form['netmask'] and form['netmask'] != cfg['netmask'] \
-                        and re.match('^%s$' % ip_regex, form['netmask']):
-                    lwp.push_net_value('LXC_NETMASK', form['netmask'])
-
-                if form['network'] and form['network'] != cfg['network'] and \
-                        re.match('^%s(?:/\d{1,2}|)$' % ip_regex,
-                                 form['network']):
-                    lwp.push_net_value('LXC_NETWORK', form['network'])
-
-                if form['range'] and form['range'] != cfg['range'] and \
-                        re.match('^%s,%s$' % (ip_regex, ip_regex),
-                                 form['range']):
-                    lwp.push_net_value('LXC_DHCP_RANGE', form['range'])
-
-                if form['max'] and form['max'] != cfg['max'] and \
-                        re.match('^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$',
-                                 form['max']):
-                    lwp.push_net_value('LXC_DHCP_MAX', form['max'])
-
-                if lwp.net_restart() == 0:
-                    flash(u'LXC Network settings applied successfully!',
-                          'success')
-                else:
-                    flash(u'Failed to restart LXC networking.', 'error')
+            if lwp.net_restart() == 0:
+                flash(u'LXC Network settings applied successfully!',
+                      'success')
             else:
-                flash(u'Stop all containers before restart lxc-net.',
-                      'warning')
-        return render_template('lxc-net.html', containers=lxc.ls(),
-                               cfg=lwp.get_net_settings(),
-                               running=lxc.running())
-    return render_template('login.html')
+                flash(u'Failed to restart LXC networking.', 'error')
+        else:
+            flash(u'Stop all containers before restart lxc-net.',
+                  'warning')
+    return render_template('lxc-net.html', containers=lxc.ls(),
+                           cfg=lwp.get_net_settings(),
+                           running=lxc.running())
 
 
+@if_superuser
+@if_auth
 @app.route('/lwp/users', methods=['POST', 'GET'])
 def lwp_users():
     '''
     returns users and get posts request : can edit or add user in page.
     this funtction uses sqlite3
     '''
-    if 'logged_in' in session:
-        if session['su'] != 'Yes':
-            return abort(403)
+    try:
+        trash = request.args.get('trash')
+    except KeyError:
+        trash = 0
 
-        try:
-            trash = request.args.get('trash')
-        except KeyError:
-            trash = 0
+    su_users = query_db("SELECT COUNT(id) as num FROM users "
+                        "WHERE su='Yes'", [], one=True)
 
-        su_users = query_db("SELECT COUNT(id) as num FROM users "
-                            "WHERE su='Yes'", [], one=True)
+    if request.args.get('token') == session.get('token') and \
+            int(trash) == 1 and request.args.get('userid') and \
+            request.args.get('username'):
+        nb_users = query_db("SELECT COUNT(id) as num FROM users", [],
+                            one=True)
 
-        if request.args.get('token') == session.get('token') and \
-                int(trash) == 1 and request.args.get('userid') and \
-                request.args.get('username'):
-            nb_users = query_db("SELECT COUNT(id) as num FROM users", [],
-                                one=True)
+        if nb_users['num'] > 1:
+            if su_users['num'] <= 1:
+                su_user = query_db("SELECT username FROM users "
+                                   "WHERE su='Yes'", [], one=True)
 
-            if nb_users['num'] > 1:
-                if su_users['num'] <= 1:
-                    su_user = query_db("SELECT username FROM users "
-                                       "WHERE su='Yes'", [], one=True)
+                if su_user['username'] == request.args.get('username'):
+                    flash(u'Can\'t delete the last admin user : %s' %
+                          request.args.get('username'), 'error')
+                    return redirect(url_for('lwp_users'))
 
-                    if su_user['username'] == request.args.get('username'):
-                        flash(u'Can\'t delete the last admin user : %s' %
-                              request.args.get('username'), 'error')
-                        return redirect(url_for('lwp_users'))
-
-                g.db.execute("DELETE FROM users WHERE id=? AND username=?",
-                             [request.args.get('userid'),
-                              request.args.get('username')])
-                g.db.commit()
-                flash(u'Deleted %s' % request.args.get('username'), 'success')
-                return redirect(url_for('lwp_users'))
-
-            flash(u'Can\'t delete the last user!', 'error')
+            g.db.execute("DELETE FROM users WHERE id=? AND username=?",
+                         [request.args.get('userid'),
+                          request.args.get('username')])
+            g.db.commit()
+            flash(u'Deleted %s' % request.args.get('username'), 'success')
             return redirect(url_for('lwp_users'))
 
-        if request.method == 'POST':
-            users = query_db('SELECT id, name, username, su FROM users '
-                             'ORDER BY id ASC')
+        flash(u'Can\'t delete the last user!', 'error')
+        return redirect(url_for('lwp_users'))
 
-            if request.form['newUser'] == 'True':
-                if not request.form['username'] in \
-                        [user['username'] for user in users]:
-                    if re.match('^\w+$', request.form['username']) and \
-                            request.form['password1']:
-                        if request.form['password1'] == \
-                                request.form['password2']:
-                            if request.form['name']:
-                                if re.match('[a-z A-Z0-9]{3,32}',
-                                            request.form['name']):
-                                    g.db.execute(
-                                        "INSERT INTO users "
-                                        "(name, username, password) "
-                                        "VALUES (?, ?, ?)",
-                                        [request.form['name'],
-                                         request.form['username'],
-                                         hash_passwd(
-                                             request.form['password1'])])
-                                    g.db.commit()
-                                else:
-                                    flash(u'Invalid name!', 'error')
-                            else:
-                                g.db.execute("INSERT INTO users "
-                                             "(username, password) VALUES "
-                                             "(?, ?)",
-                                             [request.form['username'],
-                                              hash_passwd(
-                                                  request.form['password1'])])
+    if request.method == 'POST':
+        users = query_db('SELECT id, name, username, su FROM users '
+                         'ORDER BY id ASC')
+
+        if request.form['newUser'] == 'True':
+            if not request.form['username'] in \
+                    [user['username'] for user in users]:
+                if re.match('^\w+$', request.form['username']) and \
+                        request.form['password1']:
+                    if request.form['password1'] == \
+                            request.form['password2']:
+                        if request.form['name']:
+                            if re.match('[a-z A-Z0-9]{3,32}',
+                                        request.form['name']):
+                                g.db.execute(
+                                    "INSERT INTO users "
+                                    "(name, username, password) "
+                                    "VALUES (?, ?, ?)",
+                                    [request.form['name'],
+                                     request.form['username'],
+                                     hash_passwd(
+                                         request.form['password1'])])
                                 g.db.commit()
-
-                            flash(u'Created %s' % request.form['username'],
-                                  'success')
+                            else:
+                                flash(u'Invalid name!', 'error')
                         else:
-                            flash(u'No password match', 'error')
-                    else:
-                        flash(u'Invalid username or password!', 'error')
-                else:
-                    flash(u'Username already exist!', 'error')
-
-            elif request.form['newUser'] == 'False':
-                if request.form['password1'] == request.form['password2']:
-                    if re.match('[a-z A-Z0-9]{3,32}', request.form['name']):
-                        if su_users['num'] <= 1:
-                            su = 'Yes'
-                        else:
-                            try:
-                                su = request.form['su']
-                            except KeyError:
-                                su = 'No'
-
-                        if not request.form['name']:
-                            g.db.execute("UPDATE users SET name='', su=? "
-                                         "WHERE username=?",
-                                         [su, request.form['username']])
-                            g.db.commit()
-                        elif request.form['name'] and \
-                                not request.form['password1'] and \
-                                not request.form['password2']:
-                            g.db.execute("UPDATE users SET name=?, su=? "
-                                         "WHERE username=?",
-                                         [request.form['name'], su,
-                                          request.form['username']])
-                            g.db.commit()
-                        elif request.form['name'] and \
-                                request.form['password1'] and \
-                                request.form['password2']:
-                            g.db.execute("UPDATE users SET "
-                                         "name=?, password=?, su=? WHERE "
-                                         "username=?",
-                                         [request.form['name'],
+                            g.db.execute("INSERT INTO users "
+                                         "(username, password) VALUES "
+                                         "(?, ?)",
+                                         [request.form['username'],
                                           hash_passwd(
-                                              request.form['password1']),
-                                          su, request.form['username']])
-                            g.db.commit()
-                        elif request.form['password1'] and \
-                                request.form['password2']:
-                            g.db.execute("UPDATE users SET password=?, su=? "
-                                         "WHERE username=?",
-                                         [hash_passwd(
-                                             request.form['password1']),
-                                          su, request.form['username']])
+                                              request.form['password1'])])
                             g.db.commit()
 
-                        flash(u'Updated', 'success')
+                        flash(u'Created %s' % request.form['username'],
+                              'success')
                     else:
-                        flash(u'Invalid name!', 'error')
+                        flash(u'No password match', 'error')
                 else:
-                    flash(u'No password match', 'error')
+                    flash(u'Invalid username or password!', 'error')
             else:
-                flash(u'Unknown error!', 'error')
+                flash(u'Username already exist!', 'error')
 
-        users = query_db("SELECT id, name, username, su FROM users "
-                         "ORDER BY id ASC")
-        nb_users = query_db("SELECT COUNT(id) as num FROM users", [], one=True)
-        su_users = query_db("SELECT COUNT(id) as num FROM users "
-                            "WHERE su='Yes'", [], one=True)
+        elif request.form['newUser'] == 'False':
+            if request.form['password1'] == request.form['password2']:
+                if re.match('[a-z A-Z0-9]{3,32}', request.form['name']):
+                    if su_users['num'] <= 1:
+                        su = 'Yes'
+                    else:
+                        try:
+                            su = request.form['su']
+                        except KeyError:
+                            su = 'No'
 
-        return render_template('users.html', containers=lxc.ls(), users=users,
-                               nb_users=nb_users, su_users=su_users)
-    return render_template('login.html')
+                    if not request.form['name']:
+                        g.db.execute("UPDATE users SET name='', su=? "
+                                     "WHERE username=?",
+                                     [su, request.form['username']])
+                        g.db.commit()
+                    elif request.form['name'] and \
+                            not request.form['password1'] and \
+                            not request.form['password2']:
+                        g.db.execute("UPDATE users SET name=?, su=? "
+                                     "WHERE username=?",
+                                     [request.form['name'], su,
+                                      request.form['username']])
+                        g.db.commit()
+                    elif request.form['name'] and \
+                            request.form['password1'] and \
+                            request.form['password2']:
+                        g.db.execute("UPDATE users SET "
+                                     "name=?, password=?, su=? WHERE "
+                                     "username=?",
+                                     [request.form['name'],
+                                      hash_passwd(
+                                          request.form['password1']),
+                                      su, request.form['username']])
+                        g.db.commit()
+                    elif request.form['password1'] and \
+                            request.form['password2']:
+                        g.db.execute("UPDATE users SET password=?, su=? "
+                                     "WHERE username=?",
+                                     [hash_passwd(
+                                         request.form['password1']),
+                                      su, request.form['username']])
+                        g.db.commit()
+
+                    flash(u'Updated', 'success')
+                else:
+                    flash(u'Invalid name!', 'error')
+            else:
+                flash(u'No password match', 'error')
+        else:
+            flash(u'Unknown error!', 'error')
+
+    users = query_db("SELECT id, name, username, su FROM users "
+                     "ORDER BY id ASC")
+    nb_users = query_db("SELECT COUNT(id) as num FROM users", [], one=True)
+    su_users = query_db("SELECT COUNT(id) as num FROM users "
+                        "WHERE su='Yes'", [], one=True)
+
+    return render_template('users.html', containers=lxc.ls(), users=users,
+                           nb_users=nb_users, su_users=su_users)
 
 
 @app.route('/checkconfig')
@@ -846,7 +836,7 @@ def get_token():
 def query_db(query, args=(), one=False):
     cur = g.db.execute(query, args)
     rv = [dict((cur.description[idx][0], value)
-          for idx, value in enumerate(row)) for row in cur.fetchall()]
+               for idx, value in enumerate(row)) for row in cur.fetchall()]
     return (rv[0] if rv else None) if one else rv
 
 

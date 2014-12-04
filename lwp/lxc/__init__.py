@@ -129,7 +129,7 @@ def memory_usage(name):
                                       universal_newlines=True).splitlines()
     except:
         return 0
-    return int(out[0])/1024/1024
+    return int(out[0]) / 1024 / 1024
 
 
 def host_memory_usage():
@@ -156,10 +156,10 @@ def host_memory_usage():
             cached = float(split[1])
     out.close()
     used = (total - (free + buffers + cached))
-    return {'percent': int((used/total)*100),
-            'percent_cached': int(((cached)/total)*100),
-            'used': int(used/1024),
-            'total': int(total/1024)}
+    return {'percent': int((used / total) * 100),
+            'percent_cached': int(((cached) / total) * 100),
+            'used': int(used / 1024),
+            'total': int(total / 1024)}
 
 
 def host_cpu_percent():
@@ -241,7 +241,7 @@ def get_templates_list():
 
     if path:
         for line in path:
-                templates.append(line.replace('lxc-', ''))
+            templates.append(line.replace('lxc-', ''))
 
     return sorted(templates)
 
@@ -270,13 +270,13 @@ def get_net_settings():
     config = configparser.SafeConfigParser()
     cfg = {}
     config.readfp(FakeSection(open(filename)))
-    cfg['use'] = config.get('DEFAULT', 'USE_LXC_BRIDGE').strip('"')
-    cfg['bridge'] = config.get('DEFAULT', 'LXC_BRIDGE').strip('"')
-    cfg['address'] = config.get('DEFAULT', 'LXC_ADDR').strip('"')
-    cfg['netmask'] = config.get('DEFAULT', 'LXC_NETMASK').strip('"')
-    cfg['network'] = config.get('DEFAULT', 'LXC_NETWORK').strip('"')
-    cfg['range'] = config.get('DEFAULT', 'LXC_DHCP_RANGE').strip('"')
-    cfg['max'] = config.get('DEFAULT', 'LXC_DHCP_MAX').strip('"')
+    cfg['use'] = config.get('DEFAULT', 'USE_LXC_BRIDGE').strip('"').strip('"')
+    cfg['bridge'] = config.get('DEFAULT', 'LXC_BRIDGE').strip('"').strip('"')
+    cfg['address'] = config.get('DEFAULT', 'LXC_ADDR').strip('"').strip('"')
+    cfg['netmask'] = config.get('DEFAULT', 'LXC_NETMASK').strip('"').strip('"')
+    cfg['network'] = config.get('DEFAULT', 'LXC_NETWORK').strip('"').strip('"')
+    cfg['range'] = config.get('DEFAULT', 'LXC_DHCP_RANGE').strip('"').strip('"')
+    cfg['max'] = config.get('DEFAULT', 'LXC_DHCP_MAX').strip('"').strip('"')
     return cfg
 
 
