@@ -12,6 +12,8 @@ import hashlib
 import sqlite3
 import os
 
+from object_cacher import ObjectCacher
+
 from flask import request, session, g, redirect, url_for, abort, render_template, flash, jsonify
 from . import app
 
@@ -814,7 +816,7 @@ def refresh_memory_containers(name=None):
 
 @app.route('/_check_version')
 @if_auth
-@ObjectCacher(timeout=5)
+@ObjectCacher(timeout=3600)
 def check_version():
     return jsonify(lwp.check_version())
 

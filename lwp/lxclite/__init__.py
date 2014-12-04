@@ -126,7 +126,7 @@ def clone(orig=None, new=None, snapshot=False):
         return _run(command)
 
 
-@ObjectCacher(iod="lxc.info")
+@ObjectCacher(oid="lxc.info")
 def info(container):
     '''
     Check info from lxc-info
@@ -154,7 +154,7 @@ def info(container):
     return params
 
 
-@ObjectCacher(iod="lxc.list")
+@ObjectCacher(oid="lxc.list")
 def ls():
     '''
     List containers directory
@@ -303,7 +303,7 @@ def destroy(container):
     return _run('lxc-destroy -n {}'.format(container))
 
 
-@ObjectCacher(iod="lxc.list", timeout=5)
+@ObjectCacher(oid="lxc.list", timeout=5)
 def checkconfig():
     '''
     Returns the output of lxc-checkconfig (colors cleared)
