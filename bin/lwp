@@ -1,91 +1,92 @@
 #!/usr/bin/env python
 # encoding: utf-8
-
-# LXC Python Library
-# for compatibility with LXC 0.8 and 0.9
-# on Ubuntu 12.04/12.10/13.04
-
-# Author: Elie Deloumeau
-# Contact: elie@deloumeau.fr
-
-# The MIT License (MIT)
-# Copyright (c) 2013 Elie Deloumeau
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
-
-import argparse
-import logging
-from arconfig import GenConfigAction, LoadConfigAction
-from uuid import uuid1
+import uuid
+import errno
+import signal
 import os
+from tornado.gen import coroutine, maybe_future
+from tornado.httpserver import HTTPServer
+from tornado.log import gen_log as log
+from tornado.ioloop import IOLoop
+from tornado.options import options, define
+from tornado.process import cpu_count
+from tornado.concurrent import futures
+from tornado.web import Application, StaticFileHandler, RedirectHandler
 
-parser = argparse.ArgumentParser("lwp")
-parser.add_argument("--config", action=LoadConfigAction)
-parser.add_argument("--gen-config", action=GenConfigAction)
-parser.add_argument("--debug", default=False, action="store_true", help="Debugging output")
+import lwp
+import lwp.handlers
 
-group = parser.add_argument_group("database")
-group.add_argument("-D", "--db-file", dest="db",
-                   default="/var/lib/lxc/lwp.db",
-                   help="Database file [default: /var/lib/lxc/lwp.db]")
 
-group = parser.add_argument_group("main")
-group.add_argument("-l", "--address", default="0.0.0.0", help="Listen HTTP address [default: 0.0.0.0]", dest="address")
-group.add_argument("-p", "--port", default=5000, help="Listen HTTP port [default: 5000]", type=int, dest="port")
-group.add_argument("--session-timeout", default=600, type=int, dest="session_timeout")
-group.add_argument("-S", "--secret", default=str(uuid1()), dest="secret")
+define('config', help="Configuration file")
+
+group = 'HTTP server'
+define("address", default="127.0.0.1", help="Listen address", group=group)
+define("port", type=int, default=8080, help="Listen port", group=group)
+define("debug", default=False, type=bool, help="Use for attach a debugger", group=group)
+define("gzip", default=True, type=bool, help="Compress responses", group=group)
+define("proxy-mode", default=True, type=bool, help="Process X-headers on requests", group=group)
+define("pool-size", default=cpu_count(), type=int, help="Thread pool size", group=group)
+
+define("secret", help="Cookie secret (default random)", default=os.getenv("SECRET", uuid.uuid4().bytes), group=group)
+
+
+PROJECT_ROOT = os.path.abspath(os.path.dirname(lwp.__file__))
+
 
 if __name__ == '__main__':
-    options = parser.parse_args()
-    logging.basicConfig(
-        format=u'[%(asctime)s] %(filename)s:%(lineno)d %(levelname)-6s %(message)s',
-        level=logging.INFO if options.debug else logging.DEBUG
-    )
+    options.parse_command_line()
 
+    if options.config:
+        options.parse_config_file(options.config)
 
-from lwp.app import app
-
-
-def main(host='0.0.0.0', port=5000):
-    log = logging.getLogger("lwp")
-    if not os.path.exists(app.options.directory):
-        log.fatal("LXC Directory doesn't exists")
-        return 128
     try:
-        import eventlet
-        from eventlet import wsgi
-        log.info("Starting through eventlet")
-        wsgi.server(eventlet.listen((host, port)), app)
-    except ImportError:
-        log.info("Starting through default WSGI engine")
-        app.run(host=host, port=port)
+        def on_interrupt(*args):
+            io_loop = IOLoop.current()
 
-    return 0
+            @coroutine
+            def teardown(handlers):
+                log.info("Teardown worker process")
+                while handlers:
+                    try:
+                        yield maybe_future(handlers.pop(0)())
+                    except Exception as e:
+                        log.exception(e)
 
+            log.warning("Receiving interrupt signal. Application will be stopped.")
+            io_loop.stop()
+            io_loop.run_sync(teardown)
+            exit(errno.EINTR)
 
-if __name__ == '__main__':
-    with app.app_context() as c:
-        app.options = options
-        app.options.directory = '/var/lib/lxc'
-        app.config['SECRET_KEY'] = app.options.secret
+        signal.signal(signal.SIGINT, on_interrupt)
+        signal.signal(signal.SIGTERM, on_interrupt)
+        signal.signal(signal.SIGQUIT, on_interrupt)
 
-        exit(main(
-            host=app.options.address,
-            port=app.options.port
-        ))
+        app = Application(
+            base_dir=PROJECT_ROOT,
+            debug=options.debug,
+            reload=options.debug,
+            cookie_secret=options.secret,
+            template_path=os.path.join(PROJECT_ROOT, 'templates'),
+            default_handler_class=lwp.handlers.NotFoundError,
+            gzip=options.gzip,
+            handlers=(
+                (r"^/favicon.ico$", RedirectHandler, {'url': '/static/favicon.ico'}),
+                (r"^/static/(.*)$", StaticFileHandler, {'path': os.path.join(PROJECT_ROOT, 'static')}),
+                (r"^/$", lwp.handlers.IndexHander),
+                (r"^/api/hostname$", lwp.handlers.api.Hostname),
+                (r"^/api/container$", lwp.handlers.api.Containers),
+            )
+        )
+
+        http_server = HTTPServer(app, xheaders=options.proxy_mode)
+        http_server.listen(options.port, address=options.address)
+        log.info("Starting server http://%s:%d/", options.address, options.port)
+        log.info("Init thread pool with %s threads", options.pool_size)
+        lwp.handlers.BaseHandler.THREAD_POOL = futures.ThreadPoolExecutor(options.pool_size)
+        IOLoop.current().start()
+    except Exception as e:
+        log.error("Exception on main loop:")
+        log.exception(e)
+        exit(1)
+    else:
+        exit(0)

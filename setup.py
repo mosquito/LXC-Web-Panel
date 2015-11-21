@@ -1,34 +1,24 @@
 #!/usr/bin/env python
 # encoding: utf-8
 from __future__ import absolute_import, print_function
-import os
-
-try:
-    from setuptools import setup, find_packages
-except ImportError:
-    from distutils.core import setup
+from setuptools import setup, find_packages
+import lwp
 
 
-__version__ = '0.2-pre4'
-__author__ = 'Élie Deloumeau, Antoine Tanzilli'
+REQUIREMENTS = [
+    'tornado>=4.3',
+    'ujson',
+]
 
 
-supports = {
-    'install_requires': [
-        'flask==0.9',
-        'arconfig',
-        'object_cacher',
-    ]
-}
+if lwp.PY2:
+    REQUIREMENTS.append('futures')
 
-data_files = []
-if not os.path.exists('/var/lib/lxc/lwp.db'):
-    data_files.append(('/var/lib/lxc/', ['resources/lwp.db']))
 
 setup(
     name='lwp',
-    version=__version__,
-    author=__author__,
+    version=lwp.__version__,
+    author=lwp.__author__,
     license="MIT",
     description="LXC Web Interface",
     platforms="linux",
@@ -39,7 +29,7 @@ setup(
     scripts=['bin/lwp'],
     include_package_data=True,
     zip_safe=False,
-    data_files=data_files,
+    # data_files=data_files,
     packages=find_packages(),
-    **supports
+    install_requires=REQUIREMENTS
 )
