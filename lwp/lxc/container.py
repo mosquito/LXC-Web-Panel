@@ -1,14 +1,12 @@
 #!/usr/bin/env python
 # encoding: utf-8
-from object_cacher import ObjectCacher
-
 from .exceptions import (
     ContainerAlreadyExists,
     ContainerDoesntExists,
     ContainerAlreadyRunning,
     ContainerNotRunning
 )
-
+from ..cacher import Cache
 from .system import ls, running, frozen, stopped
 from .run import run
 from . import log
@@ -35,20 +33,18 @@ def create(container, template='ubuntu', storage=None, xargs=None):
         raise ContainerAlreadyExists(
             'Container {} already created!'.format(container))
 
-    command = 'lxc-create -n {}'.format(container)
-    command += ' -t {}'.format(template)
+    command = ['lxc-create', '-n', container, '-t', template]
 
     if storage:
-        command += ' -B {}'.format(storage)
+        command.append('-B')
+        command.append(storage)
 
     if xargs:
-        command += ' -- {}'.format(xargs)
+        command.append('--')
+        command.append(xargs)
 
-    try:
-        ObjectCacher.invalidate("lxc.info")
-        ObjectCacher.invalidate("lxc.list")
-    except KeyError as e:
-        log.error(e)
+    Cache.invalidate("lxc.info")
+    Cache.invalidate("lxc.list")
 
     return run(command)
 
@@ -67,15 +63,13 @@ def clone(orig=None, new=None, snapshot=False):
         if snapshot:
             command += ' -s'
 
-        try:
-            ObjectCacher.invalidate("lxc.info")
-            ObjectCacher.invalidate("lxc.list")
-        except KeyError as e:
-            log.error(e)
+        Cache.invalidate("lxc.info")
+        Cache.invalidate("lxc.list")
 
         return run(command)
 
 
+@Cache(600, oid='lxc.info')
 def info(container):
     '''
     Check info from lxc-info
@@ -85,21 +79,23 @@ def info(container):
         raise ContainerDoesntExists(
             'Container {} does not exist!'.format(container))
 
-    output = run('lxc-info -qn {}|grep -i "State\|PID\|IP"'.format(container),
-                 output=True)
+    info = map(
+        lambda x: map(lambda s: s.strip(':'), x.lower().split()),
+        filter(
+            lambda x: any(x.lower().startswith(p) for p in ('state', 'pid', 'ip')),
+            run(['lxc-info', '-qn', container], output=True).splitlines()
+        )
+    )
 
-    params = {"state": None, "pid": None}
-    if output:
-        for i in output.splitlines():
-            n, v = i.split()
-            n = n.strip(":").lower()
-            params[n] = v
+    params = {"state": None, "pid": None, "ip": []}
+    for key, value in info:
+        if key in params and params[key]:
+            params[key] = [params[key]]
+            params[key].append(value)
+        else:
+            params[key] = value
 
-    try:
-        params['pid'] = int(params['pid'])
-    except:
-        pass
-
+    params['pid'] = int(params['pid']) if params['pid'] and params['pid'].isdigits() else params['pid']
     return params
 
 
@@ -116,11 +112,8 @@ def start(container):
         raise ContainerAlreadyRunning(
             'Container {} is already running!'.format(container))
 
-    try:
-        ObjectCacher.invalidate("lxc.info")
-        ObjectCacher.invalidate("lxc.list")
-    except KeyError as e:
-        log.error(e)
+    Cache.invalidate("lxc.info")
+    Cache.invalidate("lxc.list")
 
     return run('lxc-start -dn {}'.format(container))
 
@@ -138,11 +131,8 @@ def stop(container):
         raise ContainerNotRunning(
             'Container {} is not running!'.format(container))
 
-    try:
-        ObjectCacher.invalidate("lxc.info")
-        ObjectCacher.invalidate("lxc.list")
-    except KeyError as e:
-        log.error(e)
+    Cache.invalidate("lxc.info")
+    Cache.invalidate("lxc.list")
 
     return run('lxc-stop -n {}'.format(container))
 
@@ -160,11 +150,8 @@ def freeze(container):
         raise ContainerNotRunning(
             'Container {} is not running!'.format(container))
 
-    try:
-        ObjectCacher.invalidate("lxc.info")
-        ObjectCacher.invalidate("lxc.list")
-    except KeyError as e:
-        log.error(e)
+    Cache.invalidate("lxc.info")
+    Cache.invalidate("lxc.list")
 
     return run('lxc-freeze -n {}'.format(container))
 
@@ -182,11 +169,8 @@ def unfreeze(container):
         raise ContainerNotRunning(
             'Container {} is not frozen!'.format(container))
 
-    try:
-        ObjectCacher.invalidate("lxc.info")
-        ObjectCacher.invalidate("lxc.list")
-    except KeyError as e:
-        log.error(e)
+    Cache.invalidate("lxc.info")
+    Cache.invalidate("lxc.list")
 
     return run('lxc-unfreeze -n {}'.format(container))
 
@@ -200,11 +184,8 @@ def destroy(container):
         raise ContainerDoesntExists(
             'Container {} does not exists!'.format(container))
 
-    try:
-        ObjectCacher.invalidate("lxc.info")
-        ObjectCacher.invalidate("lxc.list")
-    except KeyError as e:
-        log.error(e)
+    Cache.invalidate("lxc.info")
+    Cache.invalidate("lxc.list")
 
     return run('lxc-destroy -n {}'.format(container))
 
@@ -214,10 +195,7 @@ def cgroup(container, key, value):
         raise ContainerDoesntExists(
             'Container {} does not exist!'.format(container))
 
-    try:
-        ObjectCacher.invalidate("lxc.info")
-        ObjectCacher.invalidate("lxc.list")
-    except KeyError as e:
-        log.error(e)
+    Cache.invalidate("lxc.info")
+    Cache.invalidate("lxc.list")
 
     return run('lxc-cgroup -n {} {} {}'.format(container, key, value))

@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 # encoding: utf-8
 import os
-import container
 from ..cacher import Cache
 from .run import run
 from . import BASE_PATH
 
 
-@Cache(20)
+@Cache(20, oid='lxc.list')
 def ls():
     '''
     List containers directory

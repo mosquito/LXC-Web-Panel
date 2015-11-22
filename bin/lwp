@@ -4,10 +4,9 @@ import uuid
 import errno
 import signal
 import os
-from tornado.gen import coroutine, maybe_future
+from tornado.ioloop import IOLoop
 from tornado.httpserver import HTTPServer
 from tornado.log import gen_log as log
-from tornado.ioloop import IOLoop
 from tornado.options import options, define
 from tornado.process import cpu_count
 from tornado.concurrent import futures
@@ -40,21 +39,12 @@ if __name__ == '__main__':
         options.parse_config_file(options.config)
 
     try:
+        ON_STOP = []
+
         def on_interrupt(*args):
             io_loop = IOLoop.current()
-
-            @coroutine
-            def teardown(handlers):
-                log.info("Teardown worker process")
-                while handlers:
-                    try:
-                        yield maybe_future(handlers.pop(0)())
-                    except Exception as e:
-                        log.exception(e)
-
             log.warning("Receiving interrupt signal. Application will be stopped.")
             io_loop.stop()
-            io_loop.run_sync(teardown)
             exit(errno.EINTR)
 
         signal.signal(signal.SIGINT, on_interrupt)
@@ -73,7 +63,8 @@ if __name__ == '__main__':
                 (r"^/favicon.ico$", RedirectHandler, {'url': '/static/favicon.ico'}),
                 (r"^/static/(.*)$", StaticFileHandler, {'path': os.path.join(PROJECT_ROOT, 'static')}),
                 (r"^/$", lwp.handlers.IndexHander),
-                (r"^/api/hostname$", lwp.handlers.api.Hostname),
+                (r"^/api/host/name$", lwp.handlers.api.Hostname),
+                (r"^/api/host/info$", lwp.handlers.api.HostInfo),
                 (r"^/api/container$", lwp.handlers.api.Containers),
             )
         )

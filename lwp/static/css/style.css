@@ -24,9 +24,21 @@ body {
     cursor: pointer;
 }
 
-#page-user-info .tab-content > * {
-    border: 1px solid #ddd;
-    border-top: none;
-    padding: 15px;
-    border-radius: 0 0 5px 5px;
+#index-page .containers .container-item {
+    margin: 3px;
+    padding: 5px;
+    cursor: pointer;
+}
+
+#index-page .containers .container-name {
+}
+
+#index-page .containers .container-name i {
+    padding: 0 5px 0 0;
+}
+
+#index-page .containers .container-active {
+    border-radius: 3px;
+    background-color: #2e6da4;
+    color: #ffffff;
 }
