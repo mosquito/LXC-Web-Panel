@@ -5,6 +5,7 @@ from tornado.gen import coroutine
 from time import sleep
 from ...cacher import Cache
 from ...lxc import BASE_PATH
+from ...lxc.system import lsb_release
 from ..base import threaded
 from ..rest import RESTHandler
 
@@ -14,19 +15,31 @@ class HostInfo(RESTHandler):
     def get(self):
         ret = {}
         (
-            ret['memory'], ret['disk'],
-            ret['cpu'], ret['uptime']
+            ret['memory'],
+            ret['disk'],
+            ret['cpu'],
+            ret['uptime'],
+            ret['release']
         ) = yield [
             self.memory(),
             self.disk_usage(),
             self.host_cpu_percent(),
             self.uptime(),
+            self.distro_name(),
         ]
+
         self.response(ret)
 
+    @staticmethod
     @threaded
-    @Cache(1, ignore_self=True)
-    def host_cpu_percent(self):
+    @Cache(86400)
+    def distro_name():
+        return lsb_release()
+
+    @staticmethod
+    @threaded
+    @Cache(1)
+    def host_cpu_percent():
         def cpu_stat_percent():
             with open('/proc/stat', 'r') as f:
                 stat = f.readline()

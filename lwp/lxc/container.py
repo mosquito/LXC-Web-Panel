@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
+import os
+
 from .exceptions import (
     ContainerAlreadyExists,
     ContainerDoesntExists,
@@ -9,7 +11,7 @@ from .exceptions import (
 from ..cacher import Cache
 from .system import ls, running, frozen, stopped
 from .run import run
-from . import log
+from . import log, BASE_PATH
 
 
 def exists(container):
@@ -67,6 +69,28 @@ def clone(orig=None, new=None, snapshot=False):
         Cache.invalidate("lxc.list")
 
         return run(command)
+
+
+def config(container):
+    path = os.path.join(BASE_PATH, container, 'config')
+    if not os.path.exists(path):
+        raise ContainerDoesntExists(container)
+
+    with open(path) as cfg:
+        return list(
+            map(
+                lambda x: tuple(
+                    map(
+                        lambda i: i.strip(),
+                        x.split('=')
+                    )
+                ),
+                filter(
+                    lambda x: x.strip() and not x.strip().startswith("#"),
+                    cfg
+                )
+            )
+        )
 
 
 @Cache(600, oid='lxc.info')

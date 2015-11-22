@@ -78,3 +78,13 @@ def checkconfig():
             .replace('\x1b', '').replace(': ', ':').split('\n')
 
     return out
+
+
+@Cache(86400)
+def lsb_release():
+    try:
+        _, out = map(lambda x: x.strip(), run(['lsb_release', '-d'], output=True).split(":"))
+    except Exception as e:
+        out = "Linux %s" % run(['uname', '-r'], output=True).strip()
+
+    return out
