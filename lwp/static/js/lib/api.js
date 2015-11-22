@@ -54,6 +54,9 @@ angular.module("LWP").factory('API', function($http, $q, $rootScope, modals) {
 		},
 		containerInfo: function (name) {
 			return rest('/api/container/' + name, 'get');
+		},
+		containerSetInfo: function (name, config) {
+			return rest('/api/container/' + name, 'put', {'config': config});
 		}
 	};
 });
