@@ -3,7 +3,6 @@ import logging
 from functools import wraps
 from time import time
 
-from multiprocessing import RLock
 
 FunctionType = type(lambda:None)
 

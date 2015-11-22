@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
 import os
-from tornado.gen import coroutine, Return
+from tornado.gen import coroutine
 from time import sleep
 from ...cacher import Cache
 from ...lxc import BASE_PATH
@@ -15,11 +15,12 @@ class HostInfo(RESTHandler):
         ret = {}
         (
             ret['memory'], ret['disk'],
-            ret['cpu']
+            ret['cpu'], ret['uptime']
         ) = yield [
             self.memory(),
             self.disk_usage(),
-            self.host_cpu_percent()
+            self.host_cpu_percent(),
+            self.uptime(),
         ]
         self.response(ret)
 
@@ -60,6 +61,25 @@ class HostInfo(RESTHandler):
         used = (st.f_blocks - st.f_bfree) * st.f_frsize
 
         return {'total': total, 'used': used, 'free': free}
+
+    @threaded
+    @Cache(1, ignore_self=True)
+    def uptime(self):
+        with open('/proc/uptime') as f:
+            uptime = float(f.readline().split()[0])
+
+            days, hours, minutes, seconds = (
+                uptime // 86400, uptime % 86400 // 3600,
+                uptime % 86400 % 3600 // 60,
+                uptime % 86400 % 3600 % 60
+            )
+
+            return {
+                'days': days,
+                'hours': hours,
+                'minutes': minutes,
+                'seconds': seconds,
+            }
 
     @staticmethod
     @threaded
