@@ -67,6 +67,7 @@ if __name__ == '__main__':
                 (r"^/api/host/info$", lwp.handlers.api.HostInfo),
                 (r"^/api/container$", lwp.handlers.api.Containers),
                 (r"^/api/container/(?P<name>\S+)$", lwp.handlers.api.Container),
+                (r"^/api/tasks/$", lwp.handlers.api.CallQueue),
             )
         )
 

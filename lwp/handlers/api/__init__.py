@@ -4,3 +4,4 @@ from .hostname import Hostname
 from .containers import Containers
 from .hostinfo import HostInfo
 from .container import Container
+from .call_queue import CallQueue

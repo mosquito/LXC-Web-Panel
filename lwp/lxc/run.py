@@ -19,5 +19,5 @@ def run(cmd, output=False):
     try:
         subprocess.check_call(cmd, universal_newlines=True)  # returns 0 for True
         return 0
-    except subprocess.CalledProcessError as e:
-        return e.returncode
+    except subprocess.CalledProcessError:
+        raise

@@ -3,7 +3,7 @@
 from tornado.gen import coroutine
 from ..base import threaded
 from ..rest import RESTHandler
-from ...lxc.system import ls
+from lwp.lxc.container import ls
 from ...lxc.container import info
 
 

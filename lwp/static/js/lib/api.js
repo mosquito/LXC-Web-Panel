@@ -49,14 +49,17 @@ angular.module("LWP").factory('API', function($http, $q, $rootScope, modals) {
 		containers: function () {
 			return rest('/api/container', 'get', null, false, true);
 		},
-		containerAction: function (name, action) {
-			return rest('/api/container', 'put', {name: name, action: action});
-		},
 		containerInfo: function (name) {
 			return rest('/api/container/' + name, 'get');
 		},
 		containerSetInfo: function (name, config) {
 			return rest('/api/container/' + name, 'put', {'config': config});
+		},
+		containerAction: function (name, action) {
+			return rest('/api/container/' + name, 'post', {action: action});
+		},
+		asyncTasks: function () {
+			return rest('/api/tasks/', 'get');
 		}
 	};
 });

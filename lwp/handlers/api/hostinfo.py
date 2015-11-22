@@ -5,7 +5,7 @@ from tornado.gen import coroutine
 from time import sleep
 from ...cacher import Cache
 from ...lxc import BASE_PATH
-from ...lxc.system import lsb_release
+from lwp.lxc.container import lsb_release
 from ..base import threaded
 from ..rest import RESTHandler
 

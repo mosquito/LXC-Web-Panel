@@ -11,8 +11,8 @@ from .exceptions import (
     ContainerAlreadyRunning,
     ContainerNotRunning
 )
+
 from ..cacher import Cache
-from .system import ls, running, frozen, stopped
 from .run import run
 from . import log, BASE_PATH
 from lwp import __version__
@@ -160,7 +160,7 @@ def start(container):
     Cache.invalidate("lxc.info")
     Cache.invalidate("lxc.list")
 
-    return run('lxc-start -dn {}'.format(container))
+    return run(['lxc-start', '-dn', container])
 
 
 def stop(container):
@@ -244,3 +244,89 @@ def cgroup(container, key, value):
     Cache.invalidate("lxc.list")
 
     return run('lxc-cgroup -n {} {} {}'.format(container, key, value))
+
+
+@Cache(20, oid='lxc.list')
+def ls():
+    '''
+    List containers directory
+
+    Note: Directory mode for Ubuntu 12/13 compatibility
+    '''
+
+    try:
+        ct_list = filter(
+            lambda x: all((
+                os.path.isdir(os.path.join(BASE_PATH, x)),
+                os.path.exists(os.path.join(BASE_PATH, x, 'config')))
+            ),
+            os.listdir(BASE_PATH)
+        )
+    except OSError:
+        ct_list = []
+
+    return sorted(ct_list)
+
+
+def listx():
+    '''
+    List all containers with status (Running, Frozen or Stopped) in a dict
+    Same as lxc-list or lxc-ls --fancy (0.9)
+    '''
+
+    stopped = []
+    frozen = []
+    running = []
+
+    for item in ls():
+        state = info(item)['state']
+        if state == 'RUNNING':
+            running.append(item)
+        elif state == 'FROZEN':
+            frozen.append(item)
+        elif state == 'STOPPED':
+            stopped.append(item)
+
+    return {
+        'RUNNING': running,
+        'FROZEN': frozen,
+        'STOPPED': stopped
+    }
+
+
+def running():
+    return listx()['RUNNING']
+
+
+def frozen():
+    return listx()['FROZEN']
+
+
+def stopped():
+    return listx()['STOPPED']
+
+
+@Cache(600)
+def checkconfig():
+    '''
+    Returns the output of lxc-checkconfig (colors cleared)
+    '''
+
+    out = run('lxc-checkconfig', output=True)
+
+    if out:
+        return out.replace('[1;32m', '').replace('[1;33m', '') \
+            .replace('[0;39m', '').replace('[1;32m', '') \
+            .replace('\x1b', '').replace(': ', ':').split('\n')
+
+    return out
+
+
+@Cache(86400)
+def lsb_release():
+    try:
+        _, out = map(lambda x: x.strip(), run(['lsb_release', '-d'], output=True).split(":"))
+    except Exception as e:
+        out = "Linux %s" % run(['uname', '-r'], output=True).strip()
+
+    return out

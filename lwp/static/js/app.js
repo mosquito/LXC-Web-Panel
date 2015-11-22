@@ -11,6 +11,7 @@ APP = angular.module("LWP", [
 
 	$routeProvider
 		 .when('/', {templateUrl: '/static/partial/index.html', controller: 'indexCtrl'}
+		).when('/actions', {templateUrl: '/static/partial/actions.html', controller: 'actionsCtrl'}
 		).when('/container/:name', {templateUrl: '/static/partial/container.html', controller: 'containerCtrl'}
 		).when('/login', {templateUrl: '/static/partial/login.html', controller: 'loginCtrl'}
 	).otherwise({redirectTo: '/'});
